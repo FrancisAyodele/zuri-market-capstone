@@ -4,7 +4,7 @@ const cors = require("cors");
 const products = require("./data/products");
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 const API_SECRET_KEY = process.env.API_SECRET_KEY;
 const STORE_NAME = process.env.STORE_NAME || "My Store";
 
