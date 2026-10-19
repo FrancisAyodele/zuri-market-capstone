@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
+    "lint": "echo 'No lint configured yet'",
+    "test": "echo 'No tests yet' && exit 0"
   },
   "dependencies": {
     "react": "^18.3.1",
