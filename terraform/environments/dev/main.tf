@@ -20,6 +20,14 @@ module "security" {
   vpc_id = module.network.vpc_id
 }
 
+module "secrets" {
+  source = "../../modules/secrets"
+}
+
+output "secret_name" {
+  value = module.secrets.secret_name
+}
+
 module "compute" {
   source             = "../../modules/compute"
   subnet_id          = module.network.public_subnet_id
