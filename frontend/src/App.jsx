@@ -81,7 +81,7 @@ const App = () => {
       />
       {cartOpen && (
         <>
-          <div className="backdrop" onClick={() => setCartOpen(false)} />
+          <div className="backdrop" role="button" tabIndex={0} aria-label="Close cart" onClick={() => setCartOpen(false)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCartOpen(false); } }} />
           <CartSidebar
             cartItems={cartItems}
             cartTotal={cartTotal}
