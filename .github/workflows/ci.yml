@@ -4,104 +4,107 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   backend:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0                       # Sonar needs history to detect "new code"
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
 
-      - name: Install
-        working-directory: backend
-        run: npm ci
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:coverage             # creates backend/coverage/lcov.info
 
-      - name: Lint
-        working-directory: backend
-        run: npm run lint
-
-      - name: Test
-        working-directory: backend
-        run: npm test
-
-      - name: SonarCloud Scan
-        uses: sonarsource/sonarqube-scan-action@v4
+      - name: SonarQube Cloud scan + quality gate
+        uses: SonarSource/sonarqube-scan-action@<SHA>   # v6.x.x
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: https://sonarcloud.io
         with:
           projectBaseDir: backend
           args: >
             -Dsonar.projectKey=FrancisAyodele_zuri-market-backend
             -Dsonar.organization=francisayodele
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.qualitygate.wait=true
 
       - name: Build backend image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./backend
           push: false
+          pull: true                           # always start from the newest base image
           tags: zuri-backend:pr
 
       - name: Trivy scan (backend)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@<SHA>  # v0.x.x
         with:
           image-ref: zuri-backend:pr
-          format: 'table'
+          format: table
           exit-code: '1'
-          severity: 'CRITICAL,HIGH'
-          trivyignores: .trivyignore
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: backend/.trivyignore
 
   frontend:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install
-        working-directory: frontend
-        run: npm ci
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:coverage             # creates frontend/coverage/lcov.info
+      - run: npm run build
 
-      - name: Lint
-        working-directory: frontend
-        run: npm run lint
-
-      - name: Build
-        working-directory: frontend
-        run: npm run build
-
-      - name: SonarCloud Scan
-        uses: sonarsource/sonarqube-scan-action@v4
+      - name: SonarQube Cloud scan + quality gate
+        uses: SonarSource/sonarqube-scan-action@<SHA>   # v6.x.x
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: https://sonarcloud.io
         with:
           projectBaseDir: frontend
           args: >
             -Dsonar.projectKey=FrancisAyodele_zuri-market-frontend
             -Dsonar.organization=francisayodele
+            -Dsonar.sources=src
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.qualitygate.wait=true
 
       - name: Build frontend image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./frontend
           push: false
+          pull: true
           tags: zuri-frontend:pr
 
       - name: Trivy scan (frontend)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@<SHA>  # v0.x.x
         with:
           image-ref: zuri-frontend:pr
-          format: 'table'
+          format: table
           exit-code: '1'
-          severity: 'CRITICAL,HIGH'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
