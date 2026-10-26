@@ -8,8 +8,15 @@ const PORT = process.env.PORT || 5001;
 const API_SECRET_KEY = process.env.API_SECRET_KEY;
 const STORE_NAME = process.env.STORE_NAME || "My Store";
 
-app.use(cors());
 app.use(express.json());
+
+app.disable('x-powered-by');          // stops Express advertising its version
+
+// Production is same-origin through the Ingress, so CORS only matters in dev (Vite on 5173)
+const allowed = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : false;
+app.use(cors({ origin: allowed }));   // replaces a bare cors()
+
+const port = Number.parseInt(process.env.PORT, 10) || 5000;  // was parseInt
 
 const validateApiKey = (req, res, next) => {
   const key = req.headers["x-api-key"];
@@ -70,7 +77,7 @@ app.post("/api/cart/validate", validateApiKey, (req, res) => {
   res.json({ items: validated, total });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Store: ${STORE_NAME}`);
-});
+if (require.main === module) {
+  app.listen(port, () => console.log(`API on ${port}`));
+}
+module.exports = app;
