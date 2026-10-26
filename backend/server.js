@@ -1,15 +1,48 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const client = require("prom-client");
 const products = require("./data/products");
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT = Number.parseInt(process.env.PORT, 10) || 5000;
 const API_SECRET_KEY = process.env.API_SECRET_KEY;
 const STORE_NAME = process.env.STORE_NAME || "My Store";
 
-app.use(cors());
+app.disable("x-powered-by"); // stops Express advertising its version
 app.use(express.json());
+
+// Production is same-origin through the Ingress, so CORS only matters in dev (Vite dev server)
+const allowed = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : false;
+app.use(cors({ origin: allowed }));
+
+// ---- Prometheus metrics ----
+client.collectDefaultMetrics();
+
+const httpDuration = new client.Histogram({
+  name: "http_request_duration_seconds",
+  help: "HTTP request duration in seconds",
+  labelNames: ["method", "route", "status_code"],
+  buckets: [0.01, 0.05, 0.1, 0.3, 0.5, 1, 2, 5],
+});
+
+app.use((req, res, next) => {
+  const stop = httpDuration.startTimer();
+  res.on("finish", () => {
+    const route = req.route ? req.baseUrl + req.route.path : "unmatched";
+    stop({ method: req.method, route, status_code: res.statusCode });
+  });
+  next();
+});
+
+// Health check for Kubernetes probes and the daily cron script
+app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
+
+// Metrics for Prometheus (not under /api, so the Ingress never exposes it)
+app.get("/metrics", async (_req, res) => {
+  res.set("Content-Type", client.register.contentType);
+  res.end(await client.register.metrics());
+});
 
 const validateApiKey = (req, res, next) => {
   const key = req.headers["x-api-key"];
@@ -35,7 +68,7 @@ app.get("/api/products", (req, res) => {
 
 // GET /api/products/:id — single product
 app.get("/api/products/:id", (req, res) => {
-  const product = products.find((p) => p.id === parseInt(req.params.id));
+  const product = products.find((p) => p.id === Number.parseInt(req.params.id, 10));
   if (!product) return res.status(404).json({ error: "Product not found" });
   res.json(product);
 });
@@ -70,7 +103,7 @@ app.post("/api/cart/validate", validateApiKey, (req, res) => {
   res.json({ items: validated, total });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Store: ${STORE_NAME}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`API on ${PORT}`));
+}
+module.exports = app;

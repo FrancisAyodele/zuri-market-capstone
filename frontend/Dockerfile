@@ -1,18 +1,21 @@
+# Stage 1: build the React app
 FROM node:22-alpine AS build
-
 WORKDIR /app
-
 COPY package*.json ./
-RUN npm ci
-
+RUN npm ci --ignore-scripts
 COPY . .
+ARG VITE_API_URL=
+ARG VITE_STORE_NAME="Zuri Market"
+ENV VITE_API_URL=$VITE_API_URL VITE_STORE_NAME=$VITE_STORE_NAME
 RUN npm run build
 
-FROM nginx:alpine
-
-COPY --from=build /app/dist /usr/share/nginx/html
+# Stage 2: serve the static files
+FROM nginxinc/nginx-unprivileged:stable-alpine
+USER root
+# pull the fixed brotli/curl versions
+RUN apk upgrade --no-cache
+# back to the image's non-root nginx user
+USER 101
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 8080
