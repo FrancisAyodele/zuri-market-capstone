@@ -29,7 +29,7 @@ jobs:
       - run: npm run test:coverage             # creates backend/coverage/lcov.info
 
       - name: SonarQube Cloud scan + quality gate
-        uses: SonarSource/sonarqube-scan-action@<SHA>   # v6.x.x
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9  # v6 - write the exact tag here
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
@@ -49,14 +49,14 @@ jobs:
           tags: zuri-backend:pr
 
       - name: Trivy scan (backend)
-        uses: aquasecurity/trivy-action@<SHA>  # v0.x.x
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # write the exact tag here
         with:
           image-ref: zuri-backend:pr
           format: table
           exit-code: '1'
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          trivyignores: backend/.trivyignore
+          trivyignores: .trivyignore
 
   frontend:
     runs-on: ubuntu-latest
@@ -80,7 +80,7 @@ jobs:
       - run: npm run build
 
       - name: SonarQube Cloud scan + quality gate
-        uses: SonarSource/sonarqube-scan-action@<SHA>   # v6.x.x
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9  # v6 - write the exact tag here
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
@@ -101,7 +101,7 @@ jobs:
           tags: zuri-frontend:pr
 
       - name: Trivy scan (frontend)
-        uses: aquasecurity/trivy-action@<SHA>  # v0.x.x
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # write the exact tag here
         with:
           image-ref: zuri-frontend:pr
           format: table
