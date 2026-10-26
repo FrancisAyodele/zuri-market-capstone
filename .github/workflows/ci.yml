@@ -1,30 +1,16 @@
 name: CI
 
+# Runs on every pull request into main. Nothing is published from here.
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
-    # Only app or workflow changes publish images. A merge that only touches k8s/
-    # (an image-tag bump) must not rebuild, or promotion would loop forever.
-    paths:
-      - 'backend/**'
-      - 'frontend/**'
-      - '.github/workflows/ci.yml'
 
 permissions:
   contents: read
 
-env:
-  # GHCR image names must be lowercase
-  IMAGE_PREFIX: ghcr.io/francisayodele/zuri-market-capstone
-
 jobs:
   backend:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write                          # only needed for the push to GHCR
     defaults:
       run:
         working-directory: backend
@@ -60,44 +46,21 @@ jobs:
         with:
           context: ./backend
           push: false
-          pull: true                           # always start from the newest base image
-          tags: zuri-backend:pr
+          pull: true
+          tags: zuri-backend:ci
 
       - name: Trivy scan (backend)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # write the exact tag here
         with:
-          image-ref: zuri-backend:pr
+          image-ref: zuri-backend:ci
           format: table
           exit-code: '1'
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           trivyignores: .trivyignore
 
-      - name: Log in to GHCR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Pushes the exact image Trivy just scanned (no rebuild)
-      - name: Push backend image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          IMAGE="${IMAGE_PREFIX}-backend"
-          TAG="sha-${GITHUB_SHA::7}"
-          docker tag zuri-backend:pr "$IMAGE:$TAG"
-          docker tag zuri-backend:pr "$IMAGE:latest"
-          docker push "$IMAGE:$TAG"
-          docker push "$IMAGE:latest"
-          echo "Pushed $IMAGE:$TAG" >> "$GITHUB_STEP_SUMMARY"
-
   frontend:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     defaults:
       run:
         working-directory: frontend
@@ -122,12 +85,10 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
-          projectBaseDir: frontend
+          projectBaseDir: frontend             # settings come from frontend/sonar-project.properties
           args: >
             -Dsonar.projectKey=FrancisAyodele_zuri-market-frontend
             -Dsonar.organization=francisayodele
-            -Dsonar.sources=src
-            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
             -Dsonar.qualitygate.wait=true
 
       - name: Build frontend image
@@ -136,32 +97,13 @@ jobs:
           context: ./frontend
           push: false
           pull: true
-          tags: zuri-frontend:pr
+          tags: zuri-frontend:ci
 
       - name: Trivy scan (frontend)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # write the exact tag here
         with:
-          image-ref: zuri-frontend:pr
+          image-ref: zuri-frontend:ci
           format: table
           exit-code: '1'
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-
-      - name: Log in to GHCR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Push frontend image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          IMAGE="${IMAGE_PREFIX}-frontend"
-          TAG="sha-${GITHUB_SHA::7}"
-          docker tag zuri-frontend:pr "$IMAGE:$TAG"
-          docker tag zuri-frontend:pr "$IMAGE:latest"
-          docker push "$IMAGE:$TAG"
-          docker push "$IMAGE:latest"
-          echo "Pushed $IMAGE:$TAG" >> "$GITHUB_STEP_SUMMARY"
