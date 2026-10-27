@@ -3,10 +3,13 @@ kind: Service
 metadata:
   name: backend
   namespace: zuri-market
+  labels:
+    app: backend
 spec:
+  type: ClusterIP
   selector:
     app: backend
   ports:
-  - port: 5001
-    targetPort: 5001
-  type: ClusterIP
+    - name: http
+      port: 5000
+      targetPort: http

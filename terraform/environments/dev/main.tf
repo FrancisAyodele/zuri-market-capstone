@@ -1,45 +1,38 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
+provider "aws" {
+  region = var.region
+  default_tags {
+    tags = { Project = "zuri-market", Env = var.env, ManagedBy = "terraform" }
   }
 }
 
-provider "aws" {
-  region = "eu-west-1"
-}
-
 module "network" {
-  source = "../../modules/network"
-}
-
-module "security" {
-  source = "../../modules/security"
-  vpc_id = module.network.vpc_id
+  source              = "../../modules/network"
+  name                = "zuri-${var.env}"
+  vpc_cidr            = var.vpc_cidr
+  public_subnet_cidr  = var.public_subnet_cidr
+  private_subnet_cidr = var.private_subnet_cidr
+  az                  = "${var.region}a"
 }
 
 module "secrets" {
   source = "../../modules/secrets"
+  env    = var.env
 }
 
-output "secret_name" {
-  value = module.secrets.secret_name
+module "security" {
+  source             = "../../modules/security"
+  name               = "zuri-${var.env}"
+  vpc_id             = module.network.vpc_id
+  allowed_http_cidrs = var.allowed_http_cidrs
+  secret_arns        = module.secrets.secret_arns
 }
 
 module "compute" {
-  source             = "../../modules/compute"
-  subnet_id          = module.network.public_subnet_id
-  security_group_id  = module.security.security_group_id
-  key_name           = var.key_name
-}
-
-variable "key_name" {
-  description = "Name of an existing EC2 key pair"
-  type        = string
-}
-
-output "public_ip" {
-  value = module.compute.public_ip
+  source            = "../../modules/compute"
+  name              = "zuri-${var.env}"
+  instance_type     = var.instance_type
+  subnet_id         = module.network.public_subnet_id
+  security_group_id = module.security.security_group_id
+  instance_profile  = module.security.instance_profile_name
+  region            = var.region
 }
