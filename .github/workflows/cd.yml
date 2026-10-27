@@ -41,7 +41,7 @@ jobs:
       matrix:
         app: [backend, frontend]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Build ${{ matrix.app }} image
         uses: docker/build-push-action@v6
@@ -90,7 +90,7 @@ jobs:
       run:
         working-directory: ${{ env.TF_DIR }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: AWS credentials (OIDC, no stored keys)
         uses: aws-actions/configure-aws-credentials@v4   # pin to a commit SHA like the others
@@ -135,7 +135,7 @@ jobs:
       run:
         working-directory: ${{ env.TF_DIR }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: AWS credentials (OIDC, no stored keys)
         uses: aws-actions/configure-aws-credentials@v4   # pin to a commit SHA like the others
