@@ -44,7 +44,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Build ${{ matrix.app }} image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./${{ matrix.app }}
           push: false
