@@ -1,56 +1,94 @@
-resource "aws_security_group" "ec2" {
-  name        = "zuri-market-ec2-sg"
-  description = "Security group for Zuri Market EC2"
-  vpc_id      = var.vpc_id
+# Network and identity for the node.
+# - Port 80 only. No SSH: access is through SSM Session Manager, so nobody holds keys
+#   and every session is logged.
+# - The instance role can use SSM and read its own environment's secret, nothing else.
 
-  ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "HTTP"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "HTTPS"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "App ports"
-    from_port   = 3000
-    to_port     = 5001
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "zuri-market-ec2-sg"
-  }
+variable "name" {
+  type = string
 }
 
 variable "vpc_id" {
   type = string
 }
 
+variable "allowed_http_cidrs" {
+  type = list(string)
+}
+
+variable "secret_arns" {
+  type = list(string)
+}
+
+resource "aws_security_group" "ec2" {
+  name_prefix = "${var.name}-node-"
+  description = "Web traffic only. No SSH."
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description = "HTTP to the Traefik ingress controller"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = var.allowed_http_cidrs
+  }
+
+  egress {
+    description = "Outbound for image pulls, package installs and SSM"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Name = "${var.name}-node-sg" }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+data "aws_iam_policy_document" "assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "node" {
+  name               = "${var.name}-node"
+  assume_role_policy = data.aws_iam_policy_document.assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "ssm" {
+  role       = aws_iam_role.node.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+data "aws_iam_policy_document" "secrets" {
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = var.secret_arns
+  }
+}
+
+resource "aws_iam_role_policy" "secrets" {
+  name   = "read-app-secrets"
+  role   = aws_iam_role.node.id
+  policy = data.aws_iam_policy_document.secrets.json
+}
+
+resource "aws_iam_instance_profile" "node" {
+  name = "${var.name}-node"
+  role = aws_iam_role.node.name
+}
+
 output "security_group_id" {
   value = aws_security_group.ec2.id
+}
+
+output "instance_profile_name" {
+  value = aws_iam_instance_profile.node.name
 }

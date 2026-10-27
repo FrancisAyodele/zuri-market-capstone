@@ -1,0 +1,26 @@
+# Traefik (bundled with k3s) listens on the node's port 80.
+# /api goes to the backend, everything else to the frontend. /metrics is not exposed.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zuri
+  namespace: zuri-market
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 5000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

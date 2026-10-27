@@ -1,0 +1,19 @@
+#!/bin/bash
+# Runs once at first boot. Installs everything scripts/deploy.sh needs on the node.
+set -eux
+
+dnf install -y jq git cronie
+systemctl enable --now crond
+mkdir -p /var/log/zuri /opt/zuri
+
+echo "export AWS_DEFAULT_REGION=${region}" > /etc/profile.d/aws.sh
+echo "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml" > /etc/profile.d/k3s.sh
+
+# k3s (ships Traefik as the ingress controller on port 80).
+# --secrets-encryption encrypts Kubernetes Secrets at rest in the k3s datastore.
+# SELinux is permissive on AL2023, so the k3s-selinux RPM is not needed.
+curl -sfL https://get.k3s.io | INSTALL_K3S_CHANNEL=stable INSTALL_K3S_SKIP_SELINUX_RPM=true \
+  sh -s - server --write-kubeconfig-mode 644 --secrets-encryption
+
+# Helm, used later for Prometheus and Grafana (Phase 9)
+curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash

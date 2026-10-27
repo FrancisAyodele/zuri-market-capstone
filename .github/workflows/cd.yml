@@ -1,0 +1,243 @@
+name: CD
+
+# Runs only after a reviewed pull request (with required CI checks) is merged into main.
+# 1. publish   : build, scan and push both images to GHCR
+# 2. plan      : terraform plan for dev (shown in the run summary)
+# 3. deploy    : waits for approval (environment "dev"), applies that exact plan,
+#                then deploys the new images to k3s through SSM (no SSH)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'terraform/**'
+      - 'k8s/**'
+      - 'scripts/**'
+      - '.github/workflows/cd.yml'
+  workflow_dispatch: {}                        # lets you re-run a deploy by hand
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-dev
+  cancel-in-progress: false                    # never cancel an apply or deploy halfway
+
+env:
+  IMAGE_PREFIX: ghcr.io/francisayodele/zuri-market-capstone   # GHCR names must be lowercase
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  TF_DIR: terraform/environments/dev
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.app }} image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        app: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build ${{ matrix.app }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.app }}
+          push: false
+          pull: true
+          tags: zuri-${{ matrix.app }}:release
+
+      # Re-scan at release time: a new CVE may have been published since the PR ran
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # write the exact tag here
+        with:
+          image-ref: zuri-${{ matrix.app }}:release
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pushes the exact image Trivy just scanned (no rebuild)
+      - name: Push image
+        run: |
+          IMAGE="${IMAGE_PREFIX}-${{ matrix.app }}"
+          TAG="sha-${GITHUB_SHA::7}"
+          docker tag "zuri-${{ matrix.app }}:release" "$IMAGE:$TAG"
+          docker tag "zuri-${{ matrix.app }}:release" "$IMAGE:latest"
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:latest"
+          echo "Pushed \`$IMAGE:$TAG\`" >> "$GITHUB_STEP_SUMMARY"
+
+  plan:
+    name: Terraform plan (dev)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write                          # needed for AWS OIDC login
+    defaults:
+      run:
+        working-directory: ${{ env.TF_DIR }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: AWS credentials (OIDC, no stored keys)
+        uses: aws-actions/configure-aws-credentials@v4   # pin to a commit SHA like the others
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3              # pin to a commit SHA like the others
+        with:
+          terraform_wrapper: false
+          terraform_version: 1.16.3                      # same version that wrote the state
+
+      - run: terraform fmt -check -recursive ../..
+      - run: terraform init -input=false
+      - run: terraform validate
+
+      - name: terraform plan
+        run: |
+          terraform plan -input=false -var-file=dev.tfvars -out=tfplan
+          {
+            echo "### Terraform plan (dev)"
+            echo '```'
+            terraform show -no-color tfplan | tail -n 200
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-dev
+          path: ${{ env.TF_DIR }}/tfplan
+          retention-days: 1
+
+  deploy:
+    name: Apply infrastructure and deploy to k3s (dev)
+    needs: [publish, plan]
+    runs-on: ubuntu-latest
+    environment: dev                           # required reviewer approves here
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: ${{ env.TF_DIR }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: AWS credentials (OIDC, no stored keys)
+        uses: aws-actions/configure-aws-credentials@v4   # pin to a commit SHA like the others
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3              # pin to a commit SHA like the others
+        with:
+          terraform_wrapper: false
+          terraform_version: 1.16.3
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan-dev
+          path: ${{ env.TF_DIR }}
+
+      - run: terraform init -input=false
+
+      # Applies exactly what was planned and shown above. If anything changed in between,
+      # Terraform refuses ("saved plan is stale") instead of applying something unreviewed.
+      - name: terraform apply
+        run: terraform apply -input=false tfplan
+
+      - name: Read outputs
+        id: tf
+        run: |
+          echo "instance_id=$(terraform output -raw instance_id)" >> "$GITHUB_OUTPUT"
+          echo "public_ip=$(terraform output -raw public_ip)"     >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the node to be reachable through SSM
+        working-directory: .
+        env:
+          INSTANCE_ID: ${{ steps.tf.outputs.instance_id }}
+        run: |
+          for _ in $(seq 1 60); do
+            STATUS=$(aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+              --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null || true)
+            [ "$STATUS" = "Online" ] && { echo "SSM agent online"; exit 0; }
+            echo "SSM status: ${STATUS:-not registered yet}, waiting..."
+            sleep 10
+          done
+          echo "Node never came online in SSM"; exit 1
+
+      - name: Deploy to k3s through SSM Run Command
+        working-directory: .
+        env:
+          INSTANCE_ID: ${{ steps.tf.outputs.instance_id }}
+        run: |
+          TAG="sha-${GITHUB_SHA::7}"
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+
+          # The node checks out exactly this commit and runs scripts/deploy.sh from it
+          PARAMS=$(jq -n --arg repo "$REPO_URL" --arg sha "$GITHUB_SHA" --arg tag "$TAG" '{
+            commands: [
+              "set -eu",
+              "cloud-init status --wait >/dev/null || true",
+              "rm -rf /opt/zuri/repo && mkdir -p /opt/zuri/repo && cd /opt/zuri/repo",
+              "git init -q && git remote add origin \($repo)",
+              "git fetch -q --depth 1 origin \($sha) && git checkout -q FETCH_HEAD",
+              "bash scripts/deploy.sh \($tag) dev"
+            ],
+            executionTimeout: ["900"]
+          }')
+
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "zuri deploy $TAG" \
+            --parameters "$PARAMS" \
+            --query Command.CommandId --output text)
+          echo "SSM command: $CMD_ID"
+
+          STATUS=Pending
+          for _ in $(seq 1 90); do
+            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" \
+              --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in Success|Failed|Cancelled|TimedOut) break ;; esac
+            sleep 10
+          done
+
+          echo "----- output from the node -----"
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --query StandardOutputContent --output text
+          echo "----- errors from the node -----"
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --query StandardErrorContent --output text
+          echo "Final status: $STATUS"
+          [ "$STATUS" = "Success" ]
+
+      - name: Smoke test from the internet
+        working-directory: .
+        env:
+          PUBLIC_IP: ${{ steps.tf.outputs.public_ip }}
+        run: |
+          for _ in $(seq 1 12); do
+            if curl -fsS "http://$PUBLIC_IP/api/health" && curl -fsS -o /dev/null "http://$PUBLIC_IP/"; then
+              echo
+              echo "Live at http://$PUBLIC_IP" | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Smoke test failed"; exit 1

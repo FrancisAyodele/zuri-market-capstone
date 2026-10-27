@@ -9,6 +9,36 @@ permissions:
   contents: read
 
 jobs:
+  terraform:
+    name: terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3              # pin to a commit SHA like the others
+        with:
+          terraform_version: 1.16.3                      # same version that wrote the state
+      - name: Format check
+        run: terraform fmt -check -recursive terraform
+      - name: Validate dev and prod (no AWS access needed)
+        run: |
+          for ENV in dev prod; do
+            echo "== $ENV"
+            terraform -chdir="terraform/environments/$ENV" init -backend=false -input=false
+            terraform -chdir="terraform/environments/$ENV" validate
+          done
+
+  manifests:
+    name: kubernetes manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate against the Kubernetes schema
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          ./kubeconform -strict -summary -kubernetes-version 1.33.0 k8s/
+      - name: Scripts pass shellcheck
+        run: shellcheck scripts/*.sh
+
   backend:
     runs-on: ubuntu-latest
     defaults:

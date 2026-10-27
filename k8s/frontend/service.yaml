@@ -1,0 +1,16 @@
+# ClusterIP, not LoadBalancer: Traefik already owns port 80 on the node and routes here.
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: zuri-market
+  labels:
+    app: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
