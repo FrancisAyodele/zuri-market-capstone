@@ -49,10 +49,9 @@ for APP in backend frontend; do
   fi
 done
 
-if [ -f k8s/monitoring/servicemonitor.yaml ] \
-  && kubectl get crd servicemonitors.monitoring.coreos.com >/dev/null 2>&1; then
-  echo "==> ServiceMonitor"
-  kubectl apply -f k8s/monitoring/servicemonitor.yaml
+if [ -f scripts/install-monitoring.sh ]; then
+  echo "==> Monitoring (Prometheus, Grafana, ServiceMonitor, dashboard)"
+  bash scripts/install-monitoring.sh
 fi
 
 if [ -f scripts/health-check.sh ]; then

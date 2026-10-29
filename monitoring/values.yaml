@@ -1,0 +1,58 @@
+# Settings for the kube-prometheus-stack Helm chart (installed by scripts/install-monitoring.sh).
+# Sized for one t3.medium node running k3s.
+
+alertmanager:
+  enabled: false
+
+# k3s does not expose these components, so scraping them would only show "down" targets
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 3d
+    # Pick up every ServiceMonitor in the cluster, not only ones labelled for this release
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 100m, memory: 400Mi }
+      limits: { memory: 1Gi }
+  # NodePort is reachable only from inside the VPC: the security group allows port 80 alone.
+  # Open it from your laptop with SSM port forwarding.
+  service:
+    type: NodePort
+    nodePort: 30900
+
+grafana:
+  admin:
+    existingSecret: grafana-admin   # created by the install script with a random password
+    userKey: admin-user
+    passwordKey: admin-password
+  service:
+    type: NodePort
+    nodePort: 30300
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard      # ConfigMaps with this label are loaded as dashboards
+      labelValue: "1"
+      searchNamespace: ALL
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+
+kube-state-metrics:
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+prometheus-node-exporter:
+  resources:
+    requests: { cpu: 10m, memory: 24Mi }
+    limits: { memory: 64Mi }
