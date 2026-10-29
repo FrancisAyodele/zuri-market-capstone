@@ -1,0 +1,17 @@
+# Tells Prometheus to scrape the backend's /metrics every 15 seconds.
+# /metrics is reachable inside the cluster only; the Ingress does not route it.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: backend
+  namespace: zuri-market
+  labels:
+    app: backend
+spec:
+  selector:
+    matchLabels:
+      app: backend
+  endpoints:
+    - port: http   # the named port on the backend Service
+      path: /metrics
+      interval: 15s
