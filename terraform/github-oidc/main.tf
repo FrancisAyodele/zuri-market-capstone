@@ -14,9 +14,12 @@ provider "aws" { region = var.region }
 
 variable "region" { type = string }
 
-variable "github_repo" {
+# GitHub's OIDC "sub" claim includes the immutable owner and repository IDs, so a deleted
+# and re-created repository with the same name can never inherit this trust.
+# Format: repo:<owner>@<owner_id>/<repo>@<repo_id>:<context>
+variable "github_sub_prefix" {
   type    = string
-  default = "FrancisAyodele/zuri-market-capstone"
+  default = "repo:FrancisAyodele@205087205/zuri-market-capstone@1425210577"
 }
 
 data "aws_caller_identity" "current" {}
@@ -54,8 +57,8 @@ data "aws_iam_policy_document" "trust" {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${var.github_repo}:ref:refs/heads/main",
-        "repo:${var.github_repo}:environment:dev",
+        "${var.github_sub_prefix}:ref:refs/heads/main",
+        "${var.github_sub_prefix}:environment:dev",
       ]
     }
   }
