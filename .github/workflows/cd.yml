@@ -93,7 +93,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: AWS credentials (OIDC, no stored keys)
-        uses: aws-actions/configure-aws-credentials@v4   # pin to a commit SHA like the others
+        uses: aws-actions/configure-aws-credentials@v6   # pin to a commit SHA like the others
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
@@ -138,7 +138,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: AWS credentials (OIDC, no stored keys)
-        uses: aws-actions/configure-aws-credentials@v4   # pin to a commit SHA like the others
+        uses: aws-actions/configure-aws-credentials@v6   # pin to a commit SHA like the others
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
