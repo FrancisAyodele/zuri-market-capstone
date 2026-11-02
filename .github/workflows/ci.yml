@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: hashicorp/setup-terraform@v3              # pin to a commit SHA like the others
+      - uses: hashicorp/setup-terraform@v4              # pin to a commit SHA like the others
         with:
           terraform_version: 1.16.3                      # same version that wrote the state
       - name: Format check
